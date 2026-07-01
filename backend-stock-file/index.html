@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BANK Stock Data (FastAPI)</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        #output { background-color: #f4f4f4; padding: 15px; margin-top: 20px; border-radius: 5px; overflow-x: auto; }
+        button { padding: 10px 15px; cursor: pointer; font-size: 16px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div id="holidayNotice" class="alert alert-warning" style="display: none;">
+        ⚠️ <strong>แจ้งเตือน:</strong> ตลาดหุ้นปิดทำการในวันหยุดเสาร์-อาทิตย์
+    </div>
+
+        <h1 class="page-title">ระบบดึงข้อมูลและทำนายหุ้น</h1>        
+
+        <div class="card">
+            <div class="card-header">
+                <h2>📊 ข้อมูลหุ้นธนาคารล่าสุด</h2>
+
+                <select id="stockSymbol" class="btn" style="background-color: white; border: 1px solid #ccc; margin-right: 10px;">
+                <option value="None"> กรุณาเลือกหุ้น </option>
+                <option value="KBANK.BK">KBANK (กสิกรไทย)</option>
+                <option value="SCB.BK">SCB (ไทยพาณิชย์)</option>
+                <option value="BBL.BK">BBL (กรุงเทพ)</option>
+                <option value="KTB.BK">KTB (กรุงไทย)</option>
+                <option value="TTB.BK">TTB (ทีเอ็มบีธนชาต)</option>
+                <option value="UOB19.BK">UOB (ยูโอบี)</option>
+                </select>
+                
+                <button id="fetchBtn" type="button" class="btn btn-primary" style="display: none;">ดึงข้อมูลหุ้น</button>
+            </div>
+            <div id="stock_data" class="data-box" style="background-color: white; color: black; padding: 0;">ข้อมูลจะแสดงที่นี่...</div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h2>🤖 ทำนายแนวโน้ม (AI Prediction)</h2>
+                <button id="predict" class="btn btn-success">กดเพื่อทำนายหุ้น</button>
+            </div>
+            <div id="predict_data" class="data-box output-box" style="background-color: white; color: black;"></div>
+        </div>
+    </div>
+
+    <script>
+        const fetchBtn = document.getElementById('fetchBtn');
+        const stock_data = document.getElementById('stock_data');
+        const predict_button = document.getElementById('predict');
+        const prediction = document.getElementById('predict_data');
+        const holidayNotice = document.getElementById('holidayNotice');
+        let savedStockData = null;
+
+        window.onload = function() {
+            const today = new Date();
+            const dayOfWeek = today.getDay(); 
+
+            if (dayOfWeek === 0 || dayOfWeek === 6) {
+                alert("แจ้งเตือน: วันนี้เป็นวันเสาร์-อาทิตย์ ตลาดหุ้นไทยปิดทำการ");
+                holidayNotice.style.display = 'block';
+                stock_data.textContent = 'ตลาดหุ้นปิดทำการในวันหยุดเสาร์-อาทิตย์ หากทำการกดดึงข้อมูลจะทำการดึงข้อมูลล่าสุดในวันศุกร์มา แล้วทำนายค่าของอีก 7 ชั่วโมงข้างหน้านับจากวันศุกร์';
+                prediction.textContent = 'ตลาดหุ้นปิดทำการในวันหยุดเสาร์-อาทิตย์ หากทำการกดดึงข้อมูลจะทำการดึงข้อมูลล่าสุดในวันศุกร์มา แล้วทำนายค่าของอีก 7 ชั่วโมงข้างหน้านับจากวันศุกร์';
+            }
+        };
+
+        // ดึงออบเจกต์ของ Dropdown มาเตรียมไว้
+        const stockDropdown = document.getElementById('stockSymbol');
+
+        // ดักจับเหตุการณ์ 'change' (เมื่อผู้ใช้เปลี่ยนตัวเลือกหุ้นใน Dropdown)
+        stockDropdown.addEventListener('change', function() {
+            
+            // สั่งให้ JavaScript "จำลองการคลิก" ที่ปุ่มดึงข้อมูลให้เราอัตโนมัติ!
+            fetchBtn.click();
+            
+        });
+
+        fetchBtn.addEventListener('click', function() {
+            event.preventDefault();
+            const selectedSymbol = document.getElementById('stockSymbol').value; // อ่านค่าจาก Dropdown
+            stock_data.innerHTML = '<div style="padding:20px;">กำลังโหลดข้อมูลจาก FastAPI...</div>';
+            predict_button.disabled = true;
+
+            fetch(`http://127.0.0.1:8000/api/get-bank-data?symbol=${selectedSymbol}`)
+                .then(response => response.json())
+                .then(result => {
+                    if(result.status === 'success') {
+                        savedStockData = result.data; // เก็บข้อมูลไว้ทำนายต่อ
+                        
+                        // สร้างโครงสร้างตาราง HTML
+                        let tableHTML = `
+                            <table class="stock-table">
+                                <thead>
+                                    <tr>
+                                        <th>วัน-เวลา</th>
+                                        <th>Open</th>
+                                        <th>High</th>
+                                        <th>Low</th>
+                                        <th>Close</th>
+                                        <th>Volume</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                        `;
+                        
+                        // (ใช้ .slice(-7) เพื่อโชว์แค่ 7 แถวล่าสุด จะได้ไม่ล้นหน้าจอ)
+                        savedStockData.slice(-7).forEach(row => {
+                            // ตัดข้อความเวลาให้ดูง่ายขึ้น (เช่น ตัด +07:00 ออก)
+                            let timeStr = row.Datetime.substring(0, 16);
+                            
+                            tableHTML += `
+                                <tr>
+                                    <td>${timeStr}</td>
+                                    <td>${row.Open.toFixed(2)}</td>
+                                    <td>${row.High.toFixed(2)}</td>
+                                    <td>${row.Low.toFixed(2)}</td>
+                                    <td><strong>${row.Close.toFixed(2)}</strong></td>
+                                    <td>${row.Volume.toLocaleString()}</td>
+                                </tr>
+                            `;
+                        });
+                        
+                        tableHTML += `</tbody></table>`;
+                        
+                        // นำตารางไปแสดงผล
+                        stock_data.innerHTML = tableHTML;
+
+                        predict_button.disabled = false;
+                        prediction.innerHTML = '<div class="prediction-box">ข้อมูลพร้อมทำนายแล้ว กดปุ่มด้านบนได้เลย</div>';
+                    } else {
+                        stock_data.textContent = 'เกิดข้อผิดพลาดในการรับข้อมูล';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    stock_data.textContent = 'โปรดเลือกหุ้นสำหรับการทำนายก่อน';
+                });
+        });
+
+        predict_button.addEventListener('click', function() {
+            const selectedSymbol = document.getElementById('stockSymbol').value;
+            prediction.innerHTML = '<div class="prediction-box">Loading..... กำลังประมวลผลด้วย AI 🤖</div>';
+
+            if (!savedStockData) {
+                prediction.innerHTML = '<div class="prediction-box" style="color:red;">ไม่มีข้อมูลหุ้นสำหรับทำนาย กรุณากดดึงข้อมูลก่อน</div>';
+                return;
+            }
+
+            fetch('http://127.0.0.1:8000/predict', {
+                method:'POST',
+                headers:{ 'Content-Type' : 'application/json' },
+                body : JSON.stringify({stock_features : savedStockData, symbol: selectedSymbol})
+            })
+            .then(response => response.json())
+            .then(result => {
+                if(result.status === 'success') {
+                    // เลือกสีและไอคอนตามคลาสที่ทำนายได้
+                    let badgeClass = result.prediction_class === 1 ? 'badge-buy' : 'badge-wait';
+                    let icon = result.prediction_class === 1 ? '📈' : '⏳';
+                    
+                    // สร้าง HTML สำหรับแสดงผล
+                    let predHTML = `
+                        <div class="prediction-box">
+                            <div class="pred-title">แนวโน้มหุ้น ${result.stock} ในอีก 7 ชั่วโมงข้างหน้า </div>
+                            <div class="badge ${badgeClass}">
+                                ${icon} ${result.action}
+                            </div>
+                            <div class="pred-time">
+                                🎯 เวลาเป้าหมาย: <strong>${result.target_time} น. ของวันพรุ่งนี้ </strong> <br>
+                                <small style="color:#adb5bd;">ทำนายเมื่อ: ${result.timestamp.substring(0,11).replace('T', ' ')} เวลา ${result.timestamp.substring(11,19).replace('T', ' ')} น.</small> 
+                            </div>
+                        </div>
+                    `;
+                    // นำไปแสดงบนหน้าเว็บ
+                    prediction.innerHTML = predHTML;
+                } else {
+                    prediction.textContent = 'Backend Error: ' + result.message;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                prediction.textContent = 'ไม่สามารถเชื่อมต่อกับ FastAPI ได้';
+            });
+        });
+    </script>
+</body>
+</html>
