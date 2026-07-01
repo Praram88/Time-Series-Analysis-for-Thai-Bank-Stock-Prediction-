@@ -1,3 +1,4 @@
+Python 3.13.9
 fastapi>=0.138.0
 pydantic>=2.13.4
 scikit-learn>=1.9.0
